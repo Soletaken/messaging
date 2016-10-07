@@ -9,6 +9,8 @@ import java.util.Map;
 public class MyHandler implements HandlerInter {
     @Override
     public Object handle(String payload, Map<String, Object> headers) {
+        System.out.println("payload inside handler: " + payload);
+        System.out.println("headers inside handler: " + headers);
         return payload.toUpperCase();
     }
 }

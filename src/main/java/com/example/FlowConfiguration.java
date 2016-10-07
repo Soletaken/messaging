@@ -2,120 +2,79 @@ package com.example;
 
 import com.example.util.HandlerInter;
 import com.example.util.Utilis;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import lombok.Data;
-import org.springframework.amqp.core.AmqpAdmin;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.integration.amqp.channel.PointToPointSubscribableAmqpChannel;
+import org.springframework.integration.annotation.InboundChannelAdapter;
 import org.springframework.integration.annotation.IntegrationComponentScan;
 import org.springframework.integration.config.EnableIntegration;
 import org.springframework.integration.dsl.IntegrationFlow;
+import org.springframework.integration.handler.AbstractMessageHandler;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 
+import java.util.Collections;
 import java.util.Map;
-import java.util.Optional;
-
-import static java.util.concurrent.Executors.newCachedThreadPool;
 
 
 @Configuration
 @EnableIntegration
 @IntegrationComponentScan
 public class FlowConfiguration {
-
-    @Autowired
-    private ConnectionFactory connectionFactory;
+    PHandler handlerVoid = new PHandler();
 
     @Bean
-    MessageChannel someChannel() {
-//        final DirectChannelSpec direct = direct(Utilis.INBOUND_CHANNEL);
-//        return direct.get();
-        Optional<QueueArguments> arguments = Optional.of(new QueueArguments());
-        String queueName = "some.name.for.queue";
-        RabbitTemplate template = new RabbitTemplate(connectionFactory);
-        SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
-        container.setConnectionFactory(connectionFactory);
-        container.setTaskExecutor(newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat(queueName + ".%d").build()));
-        container.setConcurrentConsumers(5);
-        container.setMaxConcurrentConsumers(100);
-        PointToPointSubscribableAmqpChannel channel =
-                new PointToPointSubscribableAmqpChannel(Utilis.INBOUND_CHANNEL, container, template) {
-                    @Override
-                    protected String obtainQueueName(AmqpAdmin admin, String channelName) {
-                        arguments.ifPresent((a) -> {
-                            admin.declareQueue(new Queue(queueName, true, false, false, a.asMap()));
-                        });
-                        return super.obtainQueueName(admin, channelName);
-                    }
-                };
-        channel.setQueueName(queueName);
-
-
-        return channel;
-    }
-
-    @Bean
-    public IntegrationFlow testFlow(HandlerInter handlerInter) {
+    public IntegrationFlow testFlow(HandlerInter handlerInter, MessageChannel someChannel) {
+        Map<String,Object> map = Collections.singletonMap("asdasda","adsadasdas");
         return flow -> flow
                 .channel(Utilis.INBOUND_CHANNEL)
                 .transform(message -> {
-                    System.out.println(message);
+                    System.out.println("first channel: " + message);
                     return message;
                 })
-                .channel(Utilis.TEST_CHANNEL);
+                .handle(handlerInter)
+                .transform(message -> {
+                    System.out.println("doing stuff before going to queue");
+                    return message;
+                })
+                .enrichHeaders(map)
+//                .channel(Utilis.TEST_CHANNEL);
+              .channel(someChannel);
     }
 
     @Bean
-    public IntegrationFlow testFlow2(HandlerInter handlerInter) {
+    public IntegrationFlow testFlow2(HandlerInter handlerInter, MessageChannel someChannel) {
         return flow -> flow
-                .channel(Utilis.TEST_CHANNEL)
+//                .channel(Utilis.TEST_CHANNEL)
+                .channel(someChannel)
+                //jesli jest po nazwie, to działa (to znaczy nie wpada w petle, zwraca co trzeba z kontrolera)
+                //nie korzysta wtedy wcale z kolejki - widać to na panelu rabbita
+                //jeśli jest someChannel (czyli tak jak w ws), to wpada w petle - przechodzi przez cały flow (testFlow2)
+                // w nieskonczoność
+                //brakuje wtedy w headerach wiadomości reply channela - gdzieś wylatuje? w pierwszym kanale jeszcze sa
+                // headery replyChannel, errorChannel, w drugim już ich brak - zmienia sie tez id wiadomości,
+                // tylko payload takie samo
+
                 .transform(message -> {
                     System.out.println("message in another channel: " + message);
                     return message;
                 })
                 .handle(handlerInter)
-                .routeToRecipients(r-> r.recipientFlow(
-                        msg -> true, f -> f.channel(Utilis.TEST_CHANNEL2)))
+                .routeToRecipients(r -> r.recipientFlow(msg -> true, f -> f.channel(Utilis.TEST_CHANNEL2)))
                 .channel(Utilis.TEST_CHANNEL2)
                 .transform(message -> {
-                    System.out.println("message after handler: " + message);
+                    System.out.println("payload after handler inside transform: " + message);
                     return message;
                 });
+//                .handle(handlerVoid);
 
 //                .bridge(null);
     }
 
+    private class PHandler extends AbstractMessageHandler {
 
-    @Data
-    private static class QueueArguments {
-
-        private int xMaxLength = Integer.MAX_VALUE;
-
-        public Map<String, Object> asMap() {
-            return ImmutableMap.<String, Object>builder().put("x-max-length", xMaxLength).build();
+        @Override
+        protected void handleMessageInternal(Message<?> message) throws Exception {
+            System.out.println(message);
         }
     }
-
-//    @Bean
-//    public RetryOperations retryTemplate() {
-//
-//        RetryTemplate retryTemplate = new RetryTemplate();
-//        retryTemplate.setBackOffPolicy(configuration.backOffPolicyForApplication());
-//        retryTemplate.setRetryPolicy(configuration.retryPolicyForApplication());
-//        return retryTemplate;
-//    }
-//
-//    @Bean
-//    public RetryOperationsInterceptor interceptor(RetryOperations retryTemplate) {
-//        RetryOperationsInterceptor interceptor = new RetryOperationsInterceptor();
-//        interceptor.setRetryOperations(retryTemplate);
-//        return interceptor;
-//    }
 }

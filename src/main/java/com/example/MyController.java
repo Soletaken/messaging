@@ -9,9 +9,11 @@ public class MyController {
     @Autowired
     private MyGateway gateway;
 
-    @RequestMapping(path = "/a/{word}", method = RequestMethod.GET)
+    @RequestMapping(path = "/{word}", method = RequestMethod.GET)
     public String find(@PathVariable String word){
-        String result = gateway.process(word);
+        String result =
+                gateway.process(word);
         return "Hello World: " + result;
+//        return "asd";
     }
 }
